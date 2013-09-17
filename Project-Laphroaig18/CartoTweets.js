@@ -30,11 +30,11 @@ client.on('connect', function() {
                     var currentTweet=tweets[j];
                     var TweetText = currentTweet.text;
                     console.log(currRow.placename);
-
-                    client.query("INSERT INTO posts (the_geom, lat, lon, placename, state, post_text, tweetid) VALUES(null, {lat}, {lon}, {placename}, {state}, {text}, {tweetid})", {lat: currRow.lat, lon: currRow.lon, placename: currRow.placename, state: currRow.state, text: currentTweet.text, tweetid: currentTweet.id}, function(err,data){
+                    var sqlCommand = "INSERT INTO posts (the_geom, lat, lon, placename, state, post_text, tweetid) VALUES(null, {lat}, {lon}, {placename}, {state}, {text}, {tweetid})";
+                    var jsonvars = {lat: currRow.lat, lon: currRow.lon, placename: currRow.placename, state: currRow.state, text: currentTweet.text, tweetid: currentTweet.id};
+                    client.query(sqlCommand, jsonvars , function(err,data){
                         console.log(currentTweet.text+ '|'+ TweetText + '|'+ err);
                     })
-
                 }
 
             })
