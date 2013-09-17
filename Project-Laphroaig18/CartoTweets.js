@@ -9,6 +9,7 @@ var twit = new twitter({consumer_key: '',
   access_token_key: '',
   access_token_secret: ''});
 
+client.on('connect', function() {
     console.log("connected");
 
     // template can be used
