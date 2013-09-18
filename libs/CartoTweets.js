@@ -1,13 +1,21 @@
 var twitter = require('mtwitter');
 var CartoDB = require('cartodb');
-var argv = require('optimist').argv;
+require('js-yaml');
 
-var client = new CartoDB({user: argv.user, api_key: argv.api_key});
+try {
+    var auth = require('../auth.yml');
+} 
+catch (e) {
+    console.log(e);
+    process.exit(1);
+}
 
-var twit = new twitter({consumer_key: argv.consumer_key,
-                        consumer_secret: argv.consumer_secret,
-                        access_token_key: argv.access_token_key,
-                        access_token_secret: argv.access_token_secret});
+var client = new CartoDB({user: auth.user, api_key: auth.api_key});
+
+var twit = new twitter({consumer_key: auth.consumer_key,
+                        consumer_secret: auth.consumer_secret,
+                        access_token_key: auth.access_token_key,
+                        access_token_secret: auth.access_token_secret});
 
 client.on('connect', function() {
     console.log("connected");
@@ -16,19 +24,20 @@ client.on('connect', function() {
         var rows = data.rows;
         var tweets;
         
-        for (var i = 0; i < rows.length; i++){
-            var currRow = rows[i];
+        for (var i = 0; i < rows.length; i++) {
+            var currRow = rows[i];            
 
             twit.get('search/tweets', {q: currRow.placename}, function(err, item) {                
-                var tweets = item.statuses;
+                var tweets = item.statuses;                
 
-                for (var j = 0; j < tweets.length; j++){
+                for (var j = 0; j < tweets.length; j++) {
                     var currentTweet = tweets[j];
                     var tweetText = currentTweet.text;
                     
                     console.log(currRow.placename);
                     
-                    var sql = "INSERT INTO posts (the_geom, lat, lon, placename, state, post_text, tweetid) VALUES(null, {lat}, {lon}, {placename}, {state}, {text}, {tweetid})";
+                    var sql = "INSERT INTO posts (the_geom, lat, lon, placename, state, post_text, tweetid) " +
+                                    "VALUES(null, {lat}, {lon}, {placename}, {state}, {text}, {tweetid})";
                     var json = {lat: currRow.lat, 
                                 lon: currRow.lon, 
                                 placename: currRow.placename, 
@@ -37,7 +46,7 @@ client.on('connect', function() {
                                 tweetid: currentTweet.id};
                     
                     client.query(sql, json , function(err, data) {
-                        console.log(tweetText + '|'+ err);
+                        console.log(tweetText, err);
                     });
                 }
             }); 
