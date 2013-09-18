@@ -11,16 +11,15 @@ var twit = new twitter({consumer_key: argv.consumer_key,
 
 client.on('connect', function() {
     console.log("connected");
-
-    // template can be used
-    client.query("SELECT * FROM places", function(err, data){
+    
+    client.query("SELECT * FROM places", function(err, data) {
         var rows = data.rows;
         var tweets;
         
         for (var i = 0; i < rows.length; i++){
             var currRow = rows[i];
 
-            twit.get('search/tweets', {q: currRow.placename}, function(err, item){                
+            twit.get('search/tweets', {q: currRow.placename}, function(err, item) {                
                 var tweets = item.statuses;
 
                 for (var j = 0; j < tweets.length; j++){
@@ -37,7 +36,7 @@ client.on('connect', function() {
                                 text: tweetText, 
                                 tweetid: currentTweet.id};
                     
-                    client.query(sql, json , function(err, data){
+                    client.query(sql, json , function(err, data) {
                         console.log(tweetText + '|'+ err);
                     });
                 }
