@@ -18,6 +18,32 @@ var twit = new twitter({consumer_key: auth.consumer_key,
                         access_token_key: auth.access_token_key,
                         access_token_secret: auth.access_token_secret});
 
+// via Paul d'Aoust http://stackoverflow.com/questions/7744912/making-a-javascript-string-sql-friendly
+function mysql_real_escape_string (str) {
+    return str.replace(/[\0\x08\x09\x1a\n\r"'\\\%]/g, function (char) {
+        switch (char) {
+            case "\0":
+                return "\\0";
+            case "\x08":
+                return "\\b";
+            case "\x09":
+                return "\\t";
+            case "\x1a":
+                return "\\z";
+            case "\n":
+                return "\\n";
+            case "\r":
+                return "\\r";
+            case "\"":
+            case "'":
+            case "\\":
+            case "%":
+                return "\\"+char; // prepends a backslash to backslash, percent,
+                                  // and double/single quotes
+        }
+    });
+}
+
 client.on('connect', function() {
     console.log("connected");
 
@@ -26,7 +52,7 @@ client.on('connect', function() {
         function(next) {
             console.log("Querying for places...");
 
-            client.query("SELECT * FROM places", function(err, data) {
+            client.query("select * from places", function(err, data) {
                 next(err, data.rows);
             });
         },
@@ -53,7 +79,7 @@ client.on('connect', function() {
                                 lon: row.lon,
                                 placename: row.placename,
                                 state: row.state,
-                                text: tweet.text,
+                                text: mysql_real_escape_string(tweet.text),
                                 id: tweet.id};
                     }
 
@@ -76,13 +102,19 @@ client.on('connect', function() {
 
             console.log("Inserting tweets into CartoDB...");
 
-            function insertTweet(tweet, callback) {
-                var sql = "INSERT INTO posts(the_geom, lat, lon, placename, state, post_text, tweetid) VALUES(null, $1, $2, $3, $4, $5, $6, $7)";                    
-                var values = [tweet.lat, tweet.lon, tweet.placename, tweet.state, tweet.text, tweet.id];
+            function insertTweet(tweet, callback) {                
+                var sql = "insert into posts(the_geom, lat, lon, placename, state, post_text, tweetid) " +
+                                "values(null, {lat}, {lon}, {place}, {state}, {state}, {text}, {tweetId})";
+                var args = {lat: tweet.lat,
+                            lon: tweet.lon,
+                            place: tweet.placename,
+                            state: tweet.state,
+                            text: tweet.text,
+                            tweetId: tweet.id};
 
-                console.log(values);
+                console.log(args);
 
-                client.query({text: sql, values: values}, function(err, result) {
+                client.query(sql, args, function(err, result) {
                     if (err) {
                         callback(err);
                     }
@@ -90,7 +122,7 @@ client.on('connect', function() {
                         console.log("CartoDB insert result: ", result);
                         callback(null);
                     }
-                });
+                });                
             }
 
             Async.each(tweets, insertTweet, function(err) {
