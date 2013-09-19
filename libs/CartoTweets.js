@@ -1,5 +1,6 @@
 var twitter = require('mtwitter');
 var CartoDB = require('cartodb');
+var Async = require('async');
 require('js-yaml');
 
 try {
@@ -17,46 +18,117 @@ var twit = new twitter({consumer_key: auth.consumer_key,
                         access_token_key: auth.access_token_key,
                         access_token_secret: auth.access_token_secret});
 
-client.on('connect', function() {
-    console.log("connected");
-    
-    client.query("SELECT * FROM places", function(err, data) {
-        var rows = data.rows;
-        var tweets;
-        
-        for (var i = 0; i < rows.length; i++) {
-            var currRow = rows[i];            
-
-            twit.get('search/tweets', {q: currRow.placename}, function(err, item) {                
-                var tweets = item.statuses;                
-
-                for (var j = 0; j < tweets.length; j++) {
-                    var currentTweet = tweets[j];
-                    var tweetText = currentTweet.text;
-                    
-                    console.log(currRow.placename);
-                    
-                    var sql = "INSERT INTO posts (the_geom, lat, lon, placename, state, post_text, tweetid) " +
-                                    "VALUES(null, {lat}, {lon}, {placename}, {state}, {text}, {tweetid})";
-                    var json = {lat: currRow.lat, 
-                                lon: currRow.lon, 
-                                placename: currRow.placename, 
-                                state: currRow.state, 
-                                text: tweetText, 
-                                tweetid: currentTweet.id};
-                    
-                    client.query(sql, json , function(err, data) {
-                        console.log(tweetText, err);
-                    });
-                }
-            }); 
+// via Paul d'Aoust http://stackoverflow.com/questions/7744912/making-a-javascript-string-sql-friendly
+function mysql_real_escape_string (str) {
+    return str.replace(/[\0\x08\x09\x1a\n\r"'\\\%]/g, function (char) {
+        switch (char) {
+            case "\0":
+                return "\\0";
+            case "\x08":
+                return "\\b";
+            case "\x09":
+                return "\\t";
+            case "\x1a":
+                return "\\z";
+            case "\n":
+                return "\\n";
+            case "\r":
+                return "\\r";
+            case "\"":
+            case "'":
+            case "\\":
+            case "%":
+                return "\\"+char; // prepends a backslash to backslash, percent,
+                                  // and double/single quotes
         }
     });
+}
 
-    // JSON parsed data or error messages are returned
+client.on('connect', function() {
+    console.log("connected");
 
-    // chained calls are allowed
-    //.query("INSERT INTO places VALUES(1,", function(err, data){});
+    Async.waterfall([
+        // First: get all of the places
+        function(next) {
+            console.log("Querying for places...");
+
+            client.query("select * from places", function(err, data) {
+                next(err, data.rows);
+            });
+        },
+
+        // Then: for each place, get an array of tweets from a Twitter search
+        function(rows, next) {
+            console.log("Searching for tweets...");
+
+            // Returns an array of objects containing tweet text, tweet id, and place data
+            function getTweets(row, callback) {
+                twit.get('search/tweets', {q: row.placename}, function(err, item) {  
+                    if (err) {                    
+                        console.log("Twitter read error: ", err);                    
+                        process.exit(1);
+                    }
+
+                    function annotateTweet(tweet) {
+                        return {lat: row.lat,
+                                lon: row.lon,
+                                placename: "'"+row.placename+"'",
+                                state: "'"+row.state+"'",
+                                text: "'"+mysql_real_escape_string(tweet.text)+"'",
+                                id: tweet.id};
+                    }
+
+                    callback(null, item.statuses.map(annotateTweet));
+                }); 
+            }   
+
+            // Call getTweets on each place, concatenating each set of tweets into a single array
+            Async.concat(rows, getTweets, function(err, tweets) {
+                next(err, tweets);
+            });
+        },
+
+        // Finally: insert each tweet into the posts table
+        function(tweets, next) {
+            console.log("Inserting tweets into CartoDB...");
+
+            function insertTweet(tweet, callback) {                
+                var sql = "insert into posts(the_geom, lat, lon, place_name, state, post_text, tweetid) " +
+                                "values(null, {lat}, {lon}, {place}, {state}, {text}, {tweetId})";
+                var args = {lat: tweet.lat,
+                            lon: tweet.lon,
+                            place: tweet.placename,
+                            state: tweet.state,
+                            text: tweet.text,
+                            tweetId: tweet.id};
+
+                console.log(args);
+
+                client.query(sql, args, function(err, result) {
+                    if (err) {
+                        callback(err);
+                    }
+                    else {
+                        console.log("CartoDB insert result: ", result);
+                        callback(null);
+                    }
+                });                
+            }
+
+            Async.each(tweets, insertTweet, function(err) {
+                next(err, "Done!");
+            });
+        }
+    ], function (err, result) {
+           if (err) {
+               console.log(err);
+               process.exit(1);
+           }
+           else {
+               console.log(result);
+               process.exit(0);
+           }
+    });
 });
 
 
