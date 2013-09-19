@@ -59,11 +59,6 @@ client.on('connect', function() {
 
         // Then: for each place, get an array of tweets from a Twitter search
         function(rows, next) {
-            // if (err) {
-            //     console.log("CartoDB places read error: ", err);
-            //     process.exit(1);
-            // }
-
             console.log("Searching for tweets...");
 
             // Returns an array of objects containing tweet text, tweet id, and place data
@@ -77,9 +72,9 @@ client.on('connect', function() {
                     function annotateTweet(tweet) {
                         return {lat: row.lat,
                                 lon: row.lon,
-                                placename: row.placename,
-                                state: row.state,
-                                text: mysql_real_escape_string(tweet.text),
+                                placename: "'"+row.placename+"'",
+                                state: "'"+row.state+"'",
+                                text: "'"+mysql_real_escape_string(tweet.text)+"'",
                                 id: tweet.id};
                     }
 
@@ -95,16 +90,11 @@ client.on('connect', function() {
 
         // Finally: insert each tweet into the posts table
         function(tweets, next) {
-            // if (err) {
-            //     console.log("Some error from Twitter read step: ", err);
-            //     process.exit(1);
-            // }
-
             console.log("Inserting tweets into CartoDB...");
 
             function insertTweet(tweet, callback) {                
-                var sql = "insert into posts(the_geom, lat, lon, placename, state, post_text, tweetid) " +
-                                "values(null, {lat}, {lon}, {place}, {state}, {state}, {text}, {tweetId})";
+                var sql = "insert into posts(the_geom, lat, lon, place_name, state, post_text, tweetid) " +
+                                "values(null, {lat}, {lon}, {place}, {state}, {text}, {tweetId})";
                 var args = {lat: tweet.lat,
                             lon: tweet.lon,
                             place: tweet.placename,
