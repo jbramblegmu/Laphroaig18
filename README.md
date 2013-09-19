@@ -7,6 +7,7 @@
     ```
     npm install mtwitter
     npm install cartodb
+    npm install async
     npm install js-yaml
     ```
 
