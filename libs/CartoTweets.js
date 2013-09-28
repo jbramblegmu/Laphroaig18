@@ -78,18 +78,82 @@ client.on('connect', function() {
                                 id: tweet.id};
                     }
 
+
+
                     callback(null, item.statuses.map(annotateTweet));
                 }); 
-            }   
+            } 
+
+                function getTweetsByHash(row, callback) {
+                    var placeString = row.placename;
+                    var stringArray = placeString.split(" ");
+                    var newPlace = "";
+                    for(i=0;i<stringArray.length;i++){
+                        newPlace = newPlace.concat(stringArray[i]);
+                    }
+                    twit.get('search/tweets', {q: '#'.concat(newPlace)}, function(err, item) {  
+                        if (err) {                    
+                            console.log("Twitter read error: ", err);                    
+                            process.exit(1);
+                        }
+
+                        function annotateTweet(tweet) {
+                            return {lat: row.lat,
+                                lon: row.lon,
+                                placename: "'"+row.placename+"'",
+                                state: "'"+row.state+"'",
+                                text: "'"+mysql_real_escape_string(tweet.text)+"'",
+                                id: tweet.id};
+                        }
+
+
+
+                        callback(null, item.statuses.map(annotateTweet));
+                    }); 
+                }
+
+                function getTweetsByGeo(row,callback){
+                    var latString = row.lat.toString();
+                    var lonString = row.lon.toString();
+                    twit.get('search/tweets', {q: '', geocode: latString + "," + lonString + ",1mi"}, function(err, item){
+                        if (err) {
+                            console.log("Twitter read geo error: ", err);
+                            process.exit(1);
+                        }
+
+                        function annotateTweet(tweet){
+                            return {lat: row.lat,
+                                lon: row.lon,
+                                placename: "'"+row.placename+"'",
+                                state: "'"+row.state+"'",
+                                text: "'"+mysql_real_escape_string(tweet.text)+"'",
+                                id: tweet.id};
+
+                            
+                        }
+
+                        callback(null,item.statuses.map(annotateTweet));
+
+                    });
+                }
 
             // Call getTweets on each place, concatenating each set of tweets into a single array
             Async.concat(rows, getTweets, function(err, tweets) {
-                next(err, tweets);
+                 Async.concat(rows, getTweetsByHash,function(err,hashtweets){
+                    Async.concat(rows, getTweetsByGeo, function(err,geotweets){
+                        var alltweets = tweets.concat(hashtweets,geotweets);
+                        next(err, alltweets);
+                    });
+
+
+                });
             });
         },
 
+
+
         // Finally: insert each tweet into the posts table
-        function(tweets, next) {
+        function(alltweets, next) {
             console.log("Inserting tweets into CartoDB...");
 
             function insertTweet(tweet, callback) {                
@@ -115,7 +179,7 @@ client.on('connect', function() {
                 });                
             }
 
-            Async.each(tweets, insertTweet, function(err) {
+            Async.each(alltweets, insertTweet, function(err) {
                 next(err, "Done!");
             });
         }
