@@ -62,8 +62,8 @@ client.on('connect', function() {
             console.log("Searching for tweets...");
 
             // Returns an array of objects containing tweet text, tweet id, and place data
-            function getTweets(row, callback) {
-                twit.get('search/tweets', {q: row.placename}, function(err, item) {  
+            function getTweetsByPlaceName(row, callback) {
+                twit.get('search/tweets', {q: row.placename}, function(err, item) {                                         
                     if (err) {                    
                         console.log("Twitter read error: ", err);                    
                         process.exit(1);
@@ -71,11 +71,11 @@ client.on('connect', function() {
 
                     function annotateTweet(tweet) {
                         return {lat: row.lat,
-                                lon: row.lon,
-                                placename: "'"+row.placename+"'",
-                                state: "'"+row.state+"'",
-                                text: "'"+mysql_real_escape_string(tweet.text)+"'",
-                                id: tweet.id};
+                        lon: row.lon,
+                        placename: "'"+row.placename+"'",
+                        state: "'"+row.state+"'",
+                        text: "'"+mysql_real_escape_string(tweet.text)+"'",
+                        id: tweet.id};
                     }
 
 
@@ -84,65 +84,65 @@ client.on('connect', function() {
                 }); 
             } 
 
-                function getTweetsByHash(row, callback) {
-                    var placeString = row.placename;
-                    var stringArray = placeString.split(" ");
-                    var newPlace = "";
-                    for(i=0;i<stringArray.length;i++){
-                        newPlace = newPlace.concat(stringArray[i]);
-                    }
-                    twit.get('search/tweets', {q: '#'.concat(newPlace)}, function(err, item) {  
-                        if (err) {                    
-                            console.log("Twitter read error: ", err);                    
-                            process.exit(1);
-                        }
-
-                        function annotateTweet(tweet) {
-                            return {lat: row.lat,
-                                lon: row.lon,
-                                placename: "'"+row.placename+"'",
-                                state: "'"+row.state+"'",
-                                text: "'"+mysql_real_escape_string(tweet.text)+"'",
-                                id: tweet.id};
-                        }
-
-
-
-                        callback(null, item.statuses.map(annotateTweet));
-                    }); 
+            function getTweetsByHash(row, callback) {
+                var placeString = row.placename;
+                var stringArray = placeString.split(" ");
+                var newPlace = "";
+                for(i = 0; i < stringArray.length; i++){
+                    newPlace = newPlace.concat(stringArray[i]);
                 }
+                twit.get('search/tweets', {q: '#'.concat(newPlace)}, function(err, item) {  
+                    if (err) {                    
+                        console.log("Twitter hashtag search error: ", err);                    
+                        process.exit(1);
+                    }
 
-                function getTweetsByGeo(row,callback){
-                    var latString = row.lat.toString();
-                    var lonString = row.lon.toString();
-                    twit.get('search/tweets', {q: '', geocode: latString + "," + lonString + ",1mi"}, function(err, item){
-                        if (err) {
-                            console.log("Twitter read geo error: ", err);
-                            process.exit(1);
-                        }
+                    function annotateTweet(tweet) {
+                        return {lat: row.lat,
+                        lon: row.lon,
+                        placename: "'"+row.placename+"'",
+                        state: "'"+row.state+"'",
+                        text: "'"+mysql_real_escape_string(tweet.text)+"'",
+                        id: tweet.id};
+                    }
 
-                        function annotateTweet(tweet){
-                            return {lat: row.lat,
-                                lon: row.lon,
-                                placename: "'"+row.placename+"'",
-                                state: "'"+row.state+"'",
-                                text: "'"+mysql_real_escape_string(tweet.text)+"'",
-                                id: tweet.id};
+
+
+                    callback(null, item.statuses.map(annotateTweet));
+                }); 
+            }
+
+            function getTweetsByGeo(row,callback){
+                var latString = row.lat.toString();
+                var lonString = row.lon.toString();
+                twit.get('search/tweets', {geocode: latString + "," + lonString + ",1mi"}, function(err, item){
+                    if (err) {
+                        console.log("Twitter geo search error: ", err);
+                        process.exit(1);
+                    }
+
+                    function annotateTweet(tweet){
+                        return {lat: row.lat,
+                        lon: row.lon,
+                        placename: "'"+row.placename+"'",
+                        state: "'"+row.state+"'",
+                        text: "'"+mysql_real_escape_string(tweet.text)+"'",
+                        id: tweet.id};
 
                             
-                        }
+                    }
 
-                        callback(null,item.statuses.map(annotateTweet));
+                    callback(null,item.statuses.map(annotateTweet));
 
-                    });
-                }
+                });
+             }
 
             // Call getTweets on each place, concatenating each set of tweets into a single array
-            Async.concat(rows, getTweets, function(err, tweets) {
-                 Async.concat(rows, getTweetsByHash,function(err,hashtweets){
-                    Async.concat(rows, getTweetsByGeo, function(err,geotweets){
-                        var alltweets = tweets.concat(hashtweets,geotweets);
-                        next(err, alltweets);
+            Async.concat(rows, getTweetsByPlaceName, function(err, tweets) {
+                Async.concat(rows, getTweetsByHash, function(err, hashtweets){
+                    Async.concat(rows, getTweetsByGeo, function(err, geotweets){
+                        var allTweets = tweets.concat(hashtweets, geotweets);
+                        next(err, allTweets);
                     });
 
 
@@ -153,7 +153,7 @@ client.on('connect', function() {
 
 
         // Finally: insert each tweet into the posts table
-        function(alltweets, next) {
+        function(allTweets, next) {
             console.log("Inserting tweets into CartoDB...");
 
             function insertTweet(tweet, callback) {                
@@ -179,7 +179,7 @@ client.on('connect', function() {
                 });                
             }
 
-            Async.each(alltweets, insertTweet, function(err) {
+            Async.each(allTweets, insertTweet, function(err) {
                 next(err, "Done!");
             });
         }
