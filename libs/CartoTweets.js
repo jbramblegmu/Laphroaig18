@@ -19,19 +19,29 @@ var twit = new twitter({consumer_key: auth.consumer_key,
                         access_token_secret: auth.access_token_secret});
 
 // via Paul d'Aoust http://stackoverflow.com/questions/7744912/making-a-javascript-string-sql-friendly
-function sqlEscape(stringToEscape){
-    return stringToEscape
-        .replace("\\", "\\\\")
-        .replace("\'", "\\\'")
-        .replace("\"", "\\\"")
-        .replace("%", "\\%")
-        .replace("\n", "\\\n")
-        .replace("\r", "\\\r")
-        .replace("\x00", "\\\x00")
-        .replace("\x1a", "\\\z")
-        .replace("\x09", "\\\t")
-        .replace("\0", "\\\0")
-        .replace("\x08", "\\\b");
+function mysql_real_escape_string (str) {
+    return str.replace(/[\0\x08\x09\x1a\n\r"'\\\%]/g, function (char) {
+        switch (char) {
+            case "\0":
+                return "\\0";
+            case "\x08":
+                return "\\b";
+            case "\x09":
+                return "\\t";
+            case "\x1a":
+                return "\\z";
+            case "\n":
+                return "\\n";
+            case "\r":
+                return "\\r";
+            case "\"":
+            case "'":
+            case "\\":
+            case "%":
+                return "\\"+char; // prepends a backslash to backslash, percent,
+                                  // and double/single quotes
+        }
+    });
 }
 
 client.on('connect', function() {
@@ -64,9 +74,11 @@ client.on('connect', function() {
                         lon: row.lon,
                         placename: "'"+row.placename+"'",
                         state: "'"+row.state+"'",
-                        text: "'"+sqlEscape(tweet.text)+"'",
+                        text: "'"+mysql_real_escape_string(tweet.text)+"'",
                         id: tweet.id};
                     }
+
+
 
                     callback(null, item.statuses.map(annotateTweet));
                 }); 
@@ -90,9 +102,11 @@ client.on('connect', function() {
                         lon: row.lon,
                         placename: "'"+row.placename+"'",
                         state: "'"+row.state+"'",
-                        text: "'"+sqlEscape(tweet.text)+"'",
+                        text: "'"+mysql_real_escape_string(tweet.text)+"'",
                         id: tweet.id};
                     }
+
+
 
                     callback(null, item.statuses.map(annotateTweet));
                 }); 
@@ -108,26 +122,18 @@ client.on('connect', function() {
                     }
 
                     function annotateTweet(tweet){
-                        if(tweet.coordinates != null){
-                            return {lat: tweet.coordinates.coordinates[1],
-                            lon: tweet.coordinates.coordinates[0],
-                            placename: "'"+row.placename+"'",
-                            state: "'"+row.state+"'",
-                            text: "'"+sqlEscape(tweet.text)+"'",
-                            id: tweet.id};
-                        }
+                        return {lat: row.lat,
+                        lon: row.lon,
+                        placename: "'"+row.placename+"'",
+                        state: "'"+row.state+"'",
+                        text: "'"+mysql_real_escape_string(tweet.text)+"'",
+                        id: tweet.id};
 
-                        else{
-                            return {lat: row.lat,
-                            lon: row.lon,
-                            placename: "'"+row.placename+"'",
-                            state: "'"+row.state+"'",
-                            text: "'"+sqlEscape(tweet.text)+"'",
-                            id: tweet.id};
-                        }       
+                            
                     }
 
                     callback(null,item.statuses.map(annotateTweet));
+
                 });
              }
 
@@ -138,6 +144,8 @@ client.on('connect', function() {
                         var allTweets = tweets.concat(hashtweets, geotweets);
                         next(err, allTweets);
                     });
+
+
                 });
             });
         },
@@ -183,7 +191,7 @@ client.on('connect', function() {
            else {
                console.log(result);
                process.exit(0);
-            }
+           }
     });
 });
 
