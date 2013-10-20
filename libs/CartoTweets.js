@@ -19,29 +19,19 @@ var twit = new twitter({consumer_key: auth.consumer_key,
                         access_token_secret: auth.access_token_secret});
 
 // via Paul d'Aoust http://stackoverflow.com/questions/7744912/making-a-javascript-string-sql-friendly
-function mysql_real_escape_string (str) {
-    return str.replace(/[\0\x08\x09\x1a\n\r"'\\\%]/g, function (char) {
-        switch (char) {
-            case "\0":
-                return "\\0";
-            case "\x08":
-                return "\\b";
-            case "\x09":
-                return "\\t";
-            case "\x1a":
-                return "\\z";
-            case "\n":
-                return "\\n";
-            case "\r":
-                return "\\r";
-            case "\"":
-            case "'":
-            case "\\":
-            case "%":
-                return "\\"+char; // prepends a backslash to backslash, percent,
-                                  // and double/single quotes
-        }
-    });
+function sqlEscape(stringToEscape){
+    return stringToEscape
+        .replace("\\", "\\\\")
+        .replace("\'", "\\\'")
+        .replace("\"", "\\\"")
+        .replace("%", "\\%")
+        .replace("\n", "\\\n")
+        .replace("\r", "\\\r")
+        .replace("\x00", "\\\x00")
+        .replace("\x1a", "\\\z")
+        .replace("\x09", "\\\t")
+        .replace("\0", "\\\0")
+        .replace("\x08", "\\\b");
 }
 
 client.on('connect', function() {
@@ -62,8 +52,8 @@ client.on('connect', function() {
             console.log("Searching for tweets...");
 
             // Returns an array of objects containing tweet text, tweet id, and place data
-            function getTweets(row, callback) {
-                twit.get('search/tweets', {q: row.placename}, function(err, item) {  
+            function getTweetsByPlaceName(row, callback) {
+                twit.get('search/tweets', {q: row.placename}, function(err, item) {                                         
                     if (err) {                    
                         console.log("Twitter read error: ", err);                    
                         process.exit(1);
@@ -71,25 +61,91 @@ client.on('connect', function() {
 
                     function annotateTweet(tweet) {
                         return {lat: row.lat,
-                                lon: row.lon,
-                                placename: "'"+row.placename+"'",
-                                state: "'"+row.state+"'",
-                                text: "'"+mysql_real_escape_string(tweet.text)+"'",
-                                id: tweet.id};
+                        lon: row.lon,
+                        placename: "'"+row.placename+"'",
+                        state: "'"+row.state+"'",
+                        text: "'"+sqlEscape(tweet.text)+"'",
+                        id: tweet.id};
                     }
 
                     callback(null, item.statuses.map(annotateTweet));
                 }); 
-            }   
+            } 
+
+            function getTweetsByHash(row, callback) {
+                var placeString = row.placename;
+                var stringArray = placeString.split(" ");
+                var newPlace = "";
+                for(i = 0; i < stringArray.length; i++){
+                    newPlace = newPlace.concat(stringArray[i]);
+                }
+                twit.get('search/tweets', {q: '#'.concat(newPlace)}, function(err, item) {  
+                    if (err) {                    
+                        console.log("Twitter hashtag search error: ", err);                    
+                        process.exit(1);
+                    }
+
+                    function annotateTweet(tweet) {
+                        return {lat: row.lat,
+                        lon: row.lon,
+                        placename: "'"+row.placename+"'",
+                        state: "'"+row.state+"'",
+                        text: "'"+sqlEscape(tweet.text)+"'",
+                        id: tweet.id};
+                    }
+
+                    callback(null, item.statuses.map(annotateTweet));
+                }); 
+            }
+
+            function getTweetsByGeo(row,callback){
+                var latString = row.lat.toString();
+                var lonString = row.lon.toString();
+                twit.get('search/tweets', {geocode: latString + "," + lonString + ",1mi"}, function(err, item){
+                    if (err) {
+                        console.log("Twitter geo search error: ", err);
+                        process.exit(1);
+                    }
+
+                    function annotateTweet(tweet){
+                        if(tweet.coordinates != null){
+                            return {lat: tweet.coordinates.coordinates[1],
+                            lon: tweet.coordinates.coordinates[0],
+                            placename: "'"+row.placename+"'",
+                            state: "'"+row.state+"'",
+                            text: "'"+sqlEscape(tweet.text)+"'",
+                            id: tweet.id};
+                        }
+
+                        else{
+                            return {lat: row.lat,
+                            lon: row.lon,
+                            placename: "'"+row.placename+"'",
+                            state: "'"+row.state+"'",
+                            text: "'"+sqlEscape(tweet.text)+"'",
+                            id: tweet.id};
+                        }       
+                    }
+
+                    callback(null,item.statuses.map(annotateTweet));
+                });
+             }
 
             // Call getTweets on each place, concatenating each set of tweets into a single array
-            Async.concat(rows, getTweets, function(err, tweets) {
-                next(err, tweets);
+            Async.concat(rows, getTweetsByPlaceName, function(err, tweets) {
+                Async.concat(rows, getTweetsByHash, function(err, hashtweets){
+                    Async.concat(rows, getTweetsByGeo, function(err, geotweets){
+                        var allTweets = tweets.concat(hashtweets, geotweets);
+                        next(err, allTweets);
+                    });
+                });
             });
         },
 
+
+
         // Finally: insert each tweet into the posts table
-        function(tweets, next) {
+        function(allTweets, next) {
             console.log("Inserting tweets into CartoDB...");
 
             function insertTweet(tweet, callback) {                
@@ -115,7 +171,7 @@ client.on('connect', function() {
                 });                
             }
 
-            Async.each(tweets, insertTweet, function(err) {
+            Async.each(allTweets, insertTweet, function(err) {
                 next(err, "Done!");
             });
         }
@@ -127,7 +183,7 @@ client.on('connect', function() {
            else {
                console.log(result);
                process.exit(0);
-           }
+            }
     });
 });
 
